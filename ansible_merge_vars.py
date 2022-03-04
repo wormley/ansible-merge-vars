@@ -29,18 +29,23 @@ class ActionModule(ActionBase):
 
     """
     def run(self, tmp=None, task_vars=None):
-        suffix_to_merge = self._task.args.get('suffix_to_merge', '')
-        merged_var_name = self._task.args.get('merged_var_name', '')
+        result = dict()
+        del tmp  # tmp no longer has any effect
+
+        vars_to_merge = self._task.args.get('vars', '')
+        merged_var_name = self._task.args.get('outvar', '')
         dedup = self._task.args.get('dedup', True)
-        expected_type = self._task.args.get('expected_type')
+        expected_type = self._task.args.get('expected_type','dict')
         recursive_dict_merge = bool(self._task.args.get('recursive_dict_merge', False))
+        if not isinstance(vars_to_merge, list):
+            vars_to_merge = [vars_to_merge]
 
         if 'cacheable' in self._task.args.keys():
             display.deprecated(
                 "The `cacheable` option does not actually do anything, since Ansible 2.5. "
                 "No matter what, the variable set by this plugin will be set in the fact "
                 "cache if you have fact caching enabled.  To get rid of this warning, "
-                "remove the `cacheable` argument from your merge_vars task.  This warning "
+                "remove the `cacheable` argument from your me/rge_vars task.  This warning "
                 "will be removed in a future version of this plugin."
             )
 
@@ -48,16 +53,14 @@ class ActionModule(ActionBase):
         if expected_type not in ['dict', 'list']:
             raise AnsibleError("expected_type must be set ('dict' or 'list').")
         if not merged_var_name:
-            raise AnsibleError("merged_var_name must be set")
+            raise AnsibleError("outvar must be set")
         if not isidentifier(merged_var_name):
-            raise AnsibleError("merged_var_name '%s' is not a valid identifier" % merged_var_name)
-        if not suffix_to_merge.endswith('__to_merge'):
-            raise AnsibleError("Merge suffix must end with '__to_merge', sorry!")
+            raise AnsibleError("outvar '%s' is not a valid identifier" % merged_var_name)
+        
+        keys = ([ key for key in task_vars.keys()
+                       if key in vars_to_merge])
 
-        keys = sorted([key for key in task_vars.keys()
-                       if key.endswith(suffix_to_merge)])
-
-        display.v("Merging vars in this order: {}".format(keys))
+#        display.v("Merging vars in this order: {}".format(keys))
 
         # We need to render any jinja in the merged var now, because once it
         # leaves this plugin, ansible will cleanse it by turning any jinja tags
@@ -81,10 +84,10 @@ class ActionModule(ActionBase):
                 "Don't know how to merge variables of type: {}".format(type(merge_vals[0]))
             )
 
-        return {
-            'ansible_facts': {merged_var_name: merged},
-            'changed': False,
-        }
+        result['ansible_facts'] = {merged_var_name: merged}
+        result['changed'] =  False
+        result['_ansible_facts_cacheable'] = True
+        return result
 
 
 def merge_dict(merge_vals, dedup, recursive_dict_merge):
